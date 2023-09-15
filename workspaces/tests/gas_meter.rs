@@ -283,7 +283,9 @@ async fn test_gas_meter_batch_tx() -> anyhow::Result<()> {
 #[test(tokio::test)]
 async fn test_gas_meter_create_account_transaction() -> anyhow::Result<()> {
     let mut worker = workspaces::sandbox().await?;
-    let gas_meter = GasMeter::now(&mut worker);
+    let gas_meter_1 = GasMeter::now(&mut worker);
+    let gas_meter_2 = GasMeter::now(&mut worker);
+
     let mut total_gas = 0;
 
     // analogous to: worker.dev_create_account().await?;
@@ -298,7 +300,11 @@ async fn test_gas_meter_create_account_transaction() -> anyhow::Result<()> {
     let sub = account.create_subaccount("subaccount").transact().await?;
     total_gas += sub.details.total_gas_burnt;
 
-    assert_eq!(total_gas, gas_meter.elapsed().unwrap());
+    assert_eq!(total_gas, gas_meter_1.elapsed().unwrap());
+    assert_eq!(
+        gas_meter_1.elapsed().unwrap(),
+        gas_meter_2.elapsed().unwrap()
+    );
 
     Ok(())
 }

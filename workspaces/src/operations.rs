@@ -252,7 +252,7 @@ impl Transaction {
                     .sum::<u64>();
 
             for meter in self.worker.on_transact.iter() {
-                meter.lock()?(total_gas_burnt)?;
+                _ = meter.send(total_gas_burnt);
             }
         }
 
@@ -365,7 +365,7 @@ impl CallTransaction {
             .map_err(crate::error::Error::from)?;
 
         for meter in self.worker.on_transact.iter() {
-            meter.lock()?(txn.total_gas_burnt)?;
+            _ = meter.send(txn.total_gas_burnt);
         }
 
         Ok(txn)
@@ -470,7 +470,7 @@ impl<'a, 'b> CreateAccountTransaction<'a, 'b> {
         let details = ExecutionFinalResult::from_view(outcome);
 
         for meter in self.worker.on_transact.iter() {
-            meter.lock()?(details.total_gas_burnt)?;
+            _ = meter.send(details.total_gas_burnt);
         }
 
         Ok(Execution {

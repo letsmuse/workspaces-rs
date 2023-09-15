@@ -48,7 +48,7 @@ where
             .await?;
 
         for meter in self.on_transact.iter() {
-            meter.lock()?(res.details.total_gas_burnt)?;
+            _ = meter.send(res.details.total_gas_burnt);
         }
 
         Ok(res)
@@ -66,7 +66,7 @@ where
             .await?;
 
         for meter in self.on_transact.iter() {
-            meter.lock()?(res.details.total_gas_burnt)?;
+            _ = meter.send(res.details.total_gas_burnt);
         }
 
         Ok(res)

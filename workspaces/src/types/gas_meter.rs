@@ -1,14 +1,15 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{
+        mpsc::{self, TryRecvError},
+        Arc, Mutex,
+    },
+    thread::JoinHandle,
+};
 
 use crate::Worker;
 
 use super::Gas;
 use crate::result::Result;
-
-/// A hook that is called on every transaction that is sent to the network.
-/// This is useful for debugging purposes, or for tracking the amount of gas
-/// that is being used.
-pub type GasHook = Arc<Mutex<dyn FnMut(Gas) -> Result<()> + Send>>;
 
 /// Allows you to meter the amount of gas consumed by transaction(s).
 /// Note: This only works with parallel transactions that resolve to [`crate::Result::ExecutionFinalResult`]
@@ -31,38 +32,90 @@ pub type GasHook = Arc<Mutex<dyn FnMut(Gas) -> Result<()> + Send>>;
 /// println!("Total Gas consumed: {}", meter.elapsed()?);
 /// ```
 pub struct GasMeter {
-    gas: Arc<Mutex<Gas>>,
+    // FIXME: https://users.rust-lang.org/t/spawn-threads-and-join-in-destructor/1613/2
+    daemon_ref: Option<JoinHandle<Result<()>>>,
+    meter: Arc<Mutex<Meter>>,
+}
+
+struct Meter {
+    close: bool,
+    elapsed: Gas,
 }
 
 impl GasMeter {
     /// Create a new gas meter with 0 gas consumed.
     pub fn now<T: ?Sized>(worker: &mut Worker<T>) -> Self {
-        let gas_consumed = Arc::new(Mutex::new(0));
+        let (tx, rx) = mpsc::channel();
 
-        let meter = Self {
-            gas: Arc::clone(&gas_consumed),
+        worker.on_transact.push(tx);
+
+        let meter = Arc::new(Mutex::new(Meter {
+            close: false,
+            elapsed: 0,
+        }));
+
+        let handle = {
+            let meter_ = meter.clone();
+            std::thread::spawn(move || -> Result<()> {
+                loop {
+                    let mut meter = meter_.lock()?;
+
+                    match rx.try_recv() {
+                        Ok(gas) => {
+                            *meter = Meter {
+                                close: false,
+                                elapsed: meter.elapsed + gas,
+                            };
+                        }
+                        Err(err) => {
+                            if err == TryRecvError::Disconnected {
+                                return Ok(());
+                            }
+
+                            if meter.close {
+                                drop(rx);
+                                // println!("daemon cleaned up");
+                                return Ok(()); // naive way to stop the thread.
+                            }
+                        }
+                    }
+
+                    // allow for close to be called if waiting
+                    drop(meter)
+                }
+            })
         };
 
-        worker
-            .on_transact
-            .push(Arc::new(Mutex::new(move |gas: Gas| {
-                *gas_consumed.lock()? += gas;
-                Ok(())
-            })));
-
-        meter
+        Self {
+            daemon_ref: Some(handle),
+            meter: meter.clone(),
+        }
     }
 
     /// Get the total amount of gas consumed.
     pub fn elapsed(&self) -> Result<Gas> {
-        let meter = self.gas.lock()?;
-        Ok(*meter)
+        Ok(self.meter.lock()?.elapsed)
     }
 
     /// Reset the gas consumed to 0.
     pub fn reset(&self) -> Result<()> {
-        let mut meter = self.gas.lock()?;
-        *meter = 0;
+        *self.meter.lock()? = Meter {
+            close: false,
+            elapsed: 0,
+        };
+
         Ok(())
+    }
+}
+
+impl Drop for GasMeter {
+    fn drop(&mut self) {
+        // close the daemon.
+        *self.meter.lock().unwrap() = Meter {
+            close: true,
+            elapsed: 0,
+        };
+
+        _ = self.daemon_ref.take().unwrap().join().unwrap();
     }
 }
