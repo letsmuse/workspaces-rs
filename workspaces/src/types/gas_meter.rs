@@ -32,7 +32,7 @@ use crate::result::Result;
 /// println!("Total Gas consumed: {}", meter.elapsed()?);
 /// ```
 pub struct GasMeter {
-    // FIXME: https://users.rust-lang.org/t/spawn-threads-and-join-in-destructor/1613/2
+    // Workaround: https://users.rust-lang.org/t/spawn-threads-and-join-in-destructor/1613/2
     daemon_ref: Option<JoinHandle<Result<()>>>,
     meter: Arc<Mutex<Meter>>,
 }
@@ -63,7 +63,7 @@ impl GasMeter {
                     match rx.try_recv() {
                         Ok(gas) => {
                             *meter = Meter {
-                                close: false,
+                                close: meter.close,
                                 elapsed: meter.elapsed + gas,
                             };
                         }
@@ -74,7 +74,6 @@ impl GasMeter {
 
                             if meter.close {
                                 drop(rx);
-                                // println!("daemon cleaned up");
                                 return Ok(()); // naive way to stop the thread.
                             }
                         }
@@ -99,8 +98,9 @@ impl GasMeter {
 
     /// Reset the gas consumed to 0.
     pub fn reset(&self) -> Result<()> {
-        *self.meter.lock()? = Meter {
-            close: false,
+        let mut lock = self.meter.lock()?;
+        *lock = Meter {
+            close: lock.close,
             elapsed: 0,
         };
 
@@ -111,10 +111,13 @@ impl GasMeter {
 impl Drop for GasMeter {
     fn drop(&mut self) {
         // close the daemon.
-        *self.meter.lock().unwrap() = Meter {
+        let mut lock = self.meter.lock().unwrap();
+        *lock = Meter {
             close: true,
             elapsed: 0,
         };
+
+        drop(lock);
 
         _ = self.daemon_ref.take().unwrap().join().unwrap();
     }
