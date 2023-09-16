@@ -2,7 +2,7 @@ name: Workspace Checks & Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ feat/gas-api-chan-timeline ] # FIXME: change to master
   pull_request:
 
 env:
