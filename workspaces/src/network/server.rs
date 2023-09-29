@@ -55,12 +55,26 @@ async fn acquire_unused_port() -> Result<(u16, File)> {
 }
 
 async fn init_home_dir() -> Result<TempDir> {
+    println!("INIT HOME DIR 1");
     let home_dir = tempfile::tempdir().map_err(|e| ErrorKind::Io.custom(e))?;
-    let output = sandbox::init(&home_dir)
-        .map_err(|e| SandboxErrorCode::InitFailure.custom(e))?
-        .output()
+
+    println!("INIT HOME DIR 2");
+
+    let sandbox_init =
+        sandbox::init(&home_dir).map_err(|e| SandboxErrorCode::InitFailure.custom(e))?;
+
+    println!("INIT HOME DIR 3");
+
+    let _await = sandbox_init.output();
+
+    println!("INIT HOME DIR 4");
+
+    let output = _await
         .await
         .map_err(|e| SandboxErrorCode::InitFailure.custom(e))?;
+
+    println!("INIT HOME DIR 5");
+
     info!(target: "workspaces", "sandbox init: {:?}", output);
 
     Ok(home_dir)
