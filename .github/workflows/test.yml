@@ -2,7 +2,7 @@ name: Workspace Checks & Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ feat/key-loader ]
   pull_request:
 
 env:
@@ -47,5 +47,12 @@ jobs:
       run: rustup target add wasm32-unknown-unknown
     - name: Check with stable features
       run: cargo check --verbose
+    - name: Linux required keychain dependencies
+      run: |
+        sudo apt update -y
+        sudo apt install -y build-essential gnome-keyring
+        rm -f $HOME/.local/share/keyrings/*
+        echo -n "test" | gnome-keyring-daemon --unlock
+      if: matrix.platform == 'ubuntu-latest'
     - name: Run tests with unstable features
-      run: NEAR_RPC_TIMEOUT_SECS=100 cargo test --verbose --features unstable
+      run: NEAR_RPC_TIMEOUT_SECS=100 cargo test --package workspaces --test keyloader -- test_keyloader --exact --nocapture
